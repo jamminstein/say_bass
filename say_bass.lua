@@ -384,16 +384,16 @@ local function draw_main()
   local st_y = 44
   if recording then
     screen.level(15)
-    screen.move(0, st_y); screen.text("● REC")
+    screen.move(0, st_y); screen.text("REC")
   elseif armed then
     screen.level(8)
-    screen.move(0, st_y); screen.text("◌ ARMED")
+    screen.move(0, st_y); screen.text("ARMED")
   elseif playing then
     screen.level(12)
-    screen.move(0, st_y); screen.text("▶ SONG")
+    screen.move(0, st_y); screen.text("SONG")
   else
     screen.level(4)
-    screen.move(0, st_y); screen.text("■ STOP")
+    screen.move(0, st_y); screen.text("STOP")
   end
 
   -- mini piano roll of selected loop
@@ -439,7 +439,8 @@ function key(n,z)
   if n==1 then
     playing = not playing
     if playing then
-      loop_play_tick = 0
+      loop_play_tick = -1  -- fix: start at -1 so first on_tick() increment lands on 0,
+                           -- ensuring events recorded at tick 0 fire correctly
       if midi_out then midi_out:start() end
     else
       all_notes_off()
@@ -492,7 +493,7 @@ function init()
     detected_hz = (hz > 40) and hz or detected_hz
     screen_dirty = true
   end)
-  pitch_poll.time = 0.05   -- poll every 50ms ≈ fast enough for bass
+  pitch_poll.time = 0.05   -- poll every 50ms ~= fast enough for bass
   pitch_poll:start()
 
   -- amp poll to gate silence
