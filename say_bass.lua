@@ -398,7 +398,7 @@ function key(n,z)
   if n==1 then
     playing = not playing
     if playing then
-      loop_play_tick = 0
+      loop_play_tick = -1  -- start at -1 so first on_tick() increment lands on 0
       if midi_out then midi_out:start() end
     else
       all_notes_off()
