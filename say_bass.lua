@@ -51,6 +51,10 @@ local scale_name    = nil
 local scale_notes   = nil
 local pitch_buf     = {}   -- rolling pitch-class history
 local detected_hz   = 0
+local pitch_confidence = 0  -- 0-100% confidence from pitch detector
+local quantize_strength = 0.8  -- 0.0-1.0, blend between detected and quantized pitch
+local rhythmic_snap = false  -- snap note boundaries to 1/16th grid
+local grid_ticks = TICKS_PER_BEAT / 4  -- 1/16th note in ticks
 
 local current_rec   = {}   -- {tick, note, vel} being recorded
 local loops         = {}
@@ -105,7 +109,10 @@ local function snap_to_scale(mf)
     local d = math.abs(n-mf)
     if d < dist then dist=d; best=n end
   end
-  return best
+  -- Blend between raw and quantized based on quantize_strength
+  local quantized = best
+  local blended = mf + (quantized - mf) * quantize_strength
+  return blended
 end
 
 local function detect_scale(pcs)
@@ -152,8 +159,14 @@ end
 -- ─────────────────────────────────────────────
 local function process_pitch(hz, rel_tick)
   if hz < 40 then
+    pitch_confidence = 0
     if active_note >= 0 then
-      if recording then current_rec[#current_rec+1]={tick=rel_tick,note=active_note,vel=0} end
+      -- Apply rhythmic snap if enabled
+      local event_tick = rel_tick
+      if rhythmic_snap then
+        event_tick = math.floor(rel_tick / grid_ticks + 0.5) * grid_ticks
+      end
+      if recording then current_rec[#current_rec+1]={tick=event_tick,note=active_note,vel=0} end
       note_off(active_note)
       active_note = -1
     end
@@ -161,6 +174,9 @@ local function process_pitch(hz, rel_tick)
   end
 
   detected_hz = hz
+  -- Estimate confidence from pitch stability (simple: normalized hz)
+  pitch_confidence = math.min(100, (hz / 20) * 10)
+
   local mf = hz_to_midi(hz)
   if not mf then return end
 
@@ -182,13 +198,26 @@ local function process_pitch(hz, rel_tick)
   while snapped > BASS_HI do snapped = snapped-12 end
   while snapped < BASS_LO do snapped = snapped+12 end
 
+  snapped = math.floor(snapped + 0.5)  -- round for MIDI note
+
   if snapped ~= active_note then
     if active_note >= 0 then
-      if recording then current_rec[#current_rec+1]={tick=rel_tick,note=active_note,vel=0} end
+      -- Apply rhythmic snap if enabled
+      local event_tick = rel_tick
+      if rhythmic_snap then
+        event_tick = math.floor(rel_tick / grid_ticks + 0.5) * grid_ticks
+      end
+      if recording then current_rec[#current_rec+1]={tick=event_tick,note=active_note,vel=0} end
       note_off(active_note)
     end
     active_note = snapped
-    if recording then current_rec[#current_rec+1]={tick=rel_tick,note=snapped,vel=90} end
+    if recording then
+      local event_tick = rel_tick
+      if rhythmic_snap then
+        event_tick = math.floor(rel_tick / grid_ticks + 0.5) * grid_ticks
+      end
+      current_rec[#current_rec+1]={tick=event_tick,note=snapped,vel=90}
+    end
     note_on(snapped, 90)
   end
 end
@@ -307,9 +336,9 @@ local function draw_main()
   screen.move(128,7)
   screen.text_right(bpm.."bpm  "..loop_bars.."bar")
 
-  -- scale
+  -- scale and key detection display (prominent)
   if scale_root then
-    screen.level(10)
+    screen.level(12)
     screen.move(0,15)
     screen.text(NOTE_NAMES[scale_root+1].." "..scale_name)
   else
@@ -317,6 +346,11 @@ local function draw_main()
     screen.move(0,15)
     screen.text("hum to detect scale")
   end
+
+  -- confidence display
+  screen.level(8)
+  screen.move(128,15)
+  screen.text_right(string.format("%d%%", pitch_confidence))
 
   -- pitch bar (bass range C2-C4)
   local px = 84
@@ -480,11 +514,29 @@ function enc(n,d)
   screen_dirty=true
 end
 
+-- Quantize strength control via params
+function params_init()
+  params:add_control("quantize_strength", "quantize strength",
+    controlspec.new(0.0, 1.0, "lin", 0.05, 0.8, ""))
+  params:set_action("quantize_strength", function(v)
+    quantize_strength = v
+  end)
+
+  params:add_option("rhythmic_snap", "rhythmic snap",
+    {"off", "on"}, 1)
+  params:set_action("rhythmic_snap", function(idx)
+    rhythmic_snap = (idx == 2)
+  end)
+end
+
 -- ─────────────────────────────────────────────
 -- INIT
 -- ─────────────────────────────────────────────
 function init()
   midi_out = midi.connect(1)
+
+  -- Initialize params
+  params_init()
 
   -- pitch poll — this is the real Norns API for mic pitch detection
   local pitch_poll = poll.set("pitch_in_l", function(hz)
@@ -498,7 +550,7 @@ function init()
 
   -- amp poll to gate silence
   poll.set("amp_in_l", function(amp)
-    if amp < 0.001 then detected_hz = 0 end
+    if amp < 0.001 then detected_hz = 0; pitch_confidence = 0 end
   end):start()
 
   params:set("clock_tempo", bpm)
