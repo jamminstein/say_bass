@@ -94,7 +94,7 @@ local function note_off(n)
 end
 
 local function all_notes_off()
-  engine.noteOffAll()
+  -- PolyPerc is fire-and-forget, no noteOff needed
   for n = BASS_LO, BASS_HI do
     if midi_out then midi_out:note_off(n, 0, MIDI_CH) end
   end
