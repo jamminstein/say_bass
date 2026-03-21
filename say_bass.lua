@@ -70,6 +70,7 @@ for i = 1,MAX_LOOPS do
 end
 
 local clock_id      = nil
+local screen_clock_id = nil
 local midi_out      = nil
 local opxy_out      = nil
 local screen_dirty  = true
@@ -620,7 +621,7 @@ function init()
   end)
 
   -- redraw loop
-  clock.run(function()
+  screen_clock_id = clock.run(function()
     while true do
       clock.sleep(1/30)
       if screen_dirty then redraw(); screen_dirty=false end
@@ -630,6 +631,7 @@ end
 
 function cleanup()
   if clock_id then clock.cancel(clock_id) end
+  if screen_clock_id then clock.cancel(screen_clock_id) end
   all_notes_off()
-  if midi_out then midi_out:stop() end
+  if midi_out then for ch=1,16 do midi_out:cc(123,0,ch) end end
 end
