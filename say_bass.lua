@@ -431,7 +431,7 @@ local function draw_main()
     if is_sel then
       if recording then
         -- blinking border using tick parity
-        screen.level((global_tick//6)%2==0 and 15 or 6)
+        screen.level(math.floor(global_tick/6)%2==0 and 15 or 6)
       elseif armed then
         screen.level(7)
       else
