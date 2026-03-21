@@ -40,11 +40,13 @@ local selected      = 1
 local recording     = false
 local armed         = false
 local playing       = false
+local recording_active = false  -- guard for pitch processing race condition
 
 local global_tick   = 0
 local rec_start     = 0
 local active_note   = -1
-local loop_play_tick= 0
+local loop_play_tick = 0
+local loop_starting = true  -- flag to avoid race with clock thread
 
 local scale_root    = nil
 local scale_name    = nil
@@ -139,6 +141,7 @@ end
 
 local function finish_recording()
   recording = false
+  recording_active = false
   if active_note >= 0 then
     current_rec[#current_rec+1] = {tick=ticks_per_loop(), note=active_note, vel=0}
     note_off(active_note)
@@ -158,6 +161,8 @@ end
 -- PITCH POLL → called from poll callback
 -- ─────────────────────────────────────────────
 local function process_pitch(hz, rel_tick)
+  if not recording_active then return end  -- guard: skip if not actively recording
+  
   if hz < 40 then
     pitch_confidence = 0
     if active_note >= 0 then
@@ -235,6 +240,7 @@ local function on_tick()
   if armed and (global_tick % TICKS_PER_BEAT == 0) then
     armed       = false
     recording   = true
+    recording_active = true
     rec_start   = global_tick
     current_rec = {}
     screen_dirty = true
@@ -250,7 +256,13 @@ local function on_tick()
   end
 
   if playing then
-    loop_play_tick = loop_play_tick + 1
+    if loop_starting then
+      loop_play_tick = 0
+      loop_starting = false
+    else
+      loop_play_tick = loop_play_tick + 1
+    end
+    
     for i=1,MAX_LOOPS do
       local lp = loops[i]
       if lp.filled and lp.active then
@@ -473,8 +485,8 @@ function key(n,z)
   if n==1 then
     playing = not playing
     if playing then
-      loop_play_tick = -1  -- fix: start at -1 so first on_tick() increment lands on 0,
-                           -- ensuring events recorded at tick 0 fire correctly
+      loop_play_tick = 0
+      loop_starting = true  -- set flag so first on_tick() doesn't increment
       if midi_out then midi_out:start() end
     else
       all_notes_off()
@@ -483,7 +495,9 @@ function key(n,z)
 
   elseif n==2 then
     if recording then
-      recording=false; armed=false
+      recording=false
+      recording_active=false
+      armed=false
       current_rec={}
       if active_note>=0 then note_off(active_note); active_note=-1 end
     elseif armed then
