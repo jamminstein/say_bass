@@ -71,8 +71,19 @@ end
 
 local clock_id      = nil
 local midi_out      = nil
+local opxy_out      = nil
 local screen_dirty  = true
 local splash        = true
+
+-- ────────────────────────────────────────
+-- OP-XY MIDI HELPERS
+-- ────────────────────────────────────────
+local function opxy_note_on(note, vel)
+  if opxy_out then opxy_out:note_on(note, vel, params:get("opxy_channel")) end
+end
+local function opxy_note_off(note)
+  if opxy_out then opxy_out:note_off(note, 0, params:get("opxy_channel")) end
+end
 
 -- ────────────────────────────────────────
 -- MIDI HELPERS (with engine output)
@@ -81,16 +92,18 @@ local function note_on(n,v)
   -- Engine output (PolyPerc)
   local freq = midi_to_hz(n)
   engine.hz(freq)
-  
+
   -- MIDI output
   if midi_out then midi_out:note_on(n, v or 90, MIDI_CH) end
+  opxy_note_on(n, v or 90)
 end
 
 local function note_off(n)
   -- Engine will automatically decay via release envelope
-  
+
   -- MIDI output
   if midi_out then midi_out:note_off(n, 0, MIDI_CH) end
+  opxy_note_off(n)
 end
 
 local function all_notes_off()
@@ -98,6 +111,7 @@ local function all_notes_off()
   for n = BASS_LO, BASS_HI do
     if midi_out then midi_out:note_off(n, 0, MIDI_CH) end
   end
+  if opxy_out then for ch=1,16 do opxy_out:cc(123, 0, ch) end end
 end
 
 -- ────────────────────────────────────────
@@ -563,6 +577,11 @@ function params_init()
   params:set_action("rhythmic_snap", function(idx)
     rhythmic_snap = (idx == 2)
   end)
+
+  params:add_separator("OP-XY MIDI")
+  params:add{type="number", id="opxy_device", name="OP-XY Device", min=1, max=16, default=2,
+    action=function(v) opxy_out = midi.connect(v) end}
+  params:add{type="number", id="opxy_channel", name="OP-XY Channel", min=1, max=16, default=1}
 end
 
 -- ────────────────────────────────────────
@@ -570,6 +589,7 @@ end
 -- ────────────────────────────────────────
 function init()
   midi_out = midi.connect(1)
+  opxy_out = midi.connect(2)
 
   -- Initialize params
   params_init()
