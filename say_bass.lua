@@ -1,5 +1,6 @@
 -- Say Bass
 -- hum a bassline. lock it. loop it. build a song.
+-- + internal PolyPerc engine for standalone playback
 --
 -- ENC1: tempo (BPM)
 -- ENC2: loop length (bars)
@@ -8,11 +9,15 @@
 -- KEY2: arm / start recording  (press again to cancel)
 -- KEY3: clear selected loop
 
-engine.name = "None"
+engine.name = "PolyPerc"
 
--- ─────────────────────────────────────────────
+local function midi_to_hz(note)
+  return 440 * 2^((note - 69) / 12)
+end
+
+-- ────────────────────────────────────────
 -- CONSTANTS
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local MAX_LOOPS       = 8
 local TICKS_PER_BEAT  = 24
 local MIDI_CH         = 1
@@ -31,9 +36,9 @@ local SCALES = {
   { name="Blues",      steps={0,3,5,6,7,10}    },
 }
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- STATE
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local bpm           = 90
 local loop_bars     = 2
 local selected      = 1
@@ -69,22 +74,35 @@ local midi_out      = nil
 local screen_dirty  = true
 local splash        = true
 
--- ─────────────────────────────────────────────
--- MIDI HELPERS
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
+-- MIDI HELPERS (with engine output)
+-- ────────────────────────────────────────
 local function note_on(n,v)
+  -- Engine output (PolyPerc)
+  local freq = midi_to_hz(n)
+  engine.hz(freq)
+  
+  -- MIDI output
   if midi_out then midi_out:note_on(n, v or 90, MIDI_CH) end
 end
+
 local function note_off(n)
+  -- Engine will automatically decay via release envelope
+  
+  -- MIDI output
   if midi_out then midi_out:note_off(n, 0, MIDI_CH) end
 end
+
 local function all_notes_off()
-  for n = BASS_LO, BASS_HI do note_off(n) end
+  engine.noteOffAll()
+  for n = BASS_LO, BASS_HI do
+    if midi_out then midi_out:note_off(n, 0, MIDI_CH) end
+  end
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- SCALE / PITCH HELPERS
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local function hz_to_midi(hz)
   if hz < 20 then return nil end
   return 69 + 12 * math.log(hz/440) / math.log(2)
@@ -132,9 +150,9 @@ local function detect_scale(pcs)
   return broot, bsc
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- LOOP HELPERS
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local function ticks_per_loop()
   return TICKS_PER_BEAT * 4 * loop_bars
 end
@@ -157,9 +175,9 @@ local function finish_recording()
   screen_dirty = true
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- PITCH POLL → called from poll callback
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local function process_pitch(hz, rel_tick)
   if not recording_active then return end  -- guard: skip if not actively recording
   
@@ -227,9 +245,9 @@ local function process_pitch(hz, rel_tick)
   end
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- CLOCK TICK
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local function on_tick()
   if midi_out then midi_out:clock() end
   if splash then return end
@@ -280,9 +298,9 @@ local function on_tick()
   screen_dirty = true
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- SCREEN
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 local function draw_splash()
   screen.clear()
   screen.aa(1)
@@ -471,9 +489,9 @@ local function draw_main()
   screen.update()
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- NORNS CALLBACKS
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 function redraw()
   if splash then draw_splash() else draw_main() end
 end
@@ -543,9 +561,9 @@ function params_init()
   end)
 end
 
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 -- INIT
--- ─────────────────────────────────────────────
+-- ────────────────────────────────────────
 function init()
   midi_out = midi.connect(1)
 
