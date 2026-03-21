@@ -497,31 +497,35 @@ function redraw()
 end
 
 function key(n,z)
+  if n == 1 then k1_held = (z == 1); return end
   if z ~= 1 then return end
   if splash then splash=false; screen_dirty=true; return end
 
-  if n==1 then
-    playing = not playing
-    if playing then
-      loop_play_tick = 0
-      loop_starting = true  -- set flag so first on_tick() doesn't increment
-      if midi_out then midi_out:start() end
+  if n==2 then
+    if k1_held then
+      -- K1+K2: arm/disarm recording (was K2 alone)
+      if recording then
+        recording=false
+        recording_active=false
+        armed=false
+        current_rec={}
+        if active_note>=0 then note_off(active_note); active_note=-1 end
+      elseif armed then
+        armed=false
+      else
+        armed=true
+      end
     else
-      all_notes_off()
-      if midi_out then midi_out:stop() end
-    end
-
-  elseif n==2 then
-    if recording then
-      recording=false
-      recording_active=false
-      armed=false
-      current_rec={}
-      if active_note>=0 then note_off(active_note); active_note=-1 end
-    elseif armed then
-      armed=false
-    else
-      armed=true
+      -- K2: play/stop
+      playing = not playing
+      if playing then
+        loop_play_tick = 0
+        loop_starting = true
+        if midi_out then midi_out:start() end
+      else
+        all_notes_off()
+        if midi_out then midi_out:stop() end
+      end
     end
 
   elseif n==3 then
