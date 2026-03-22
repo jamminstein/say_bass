@@ -318,7 +318,7 @@ end
 -- ────────────────────────────────────────
 local function draw_splash()
   screen.clear()
-  screen.aa(1)
+  screen.aa(0)
 
   -- gum + teeth top
   local cx = 64
